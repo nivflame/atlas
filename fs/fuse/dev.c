@@ -1352,6 +1352,24 @@ static ssize_t fuse_dev_do_read(struct fuse_dev *fud, struct file *file,
 	unsigned reqsize;
 	unsigned int hash;
 
+	/*
+	 * Require sane minimum read buffer - that has capacity for fixed part
+	 * of any request header + negotiated max_write room for data.
+	 *
+	 * Historically libfuse reserves 4K for fixed header room, but e.g.
+	 * GlusterFS reserves only 80 bytes
+	 *
+	 *	= `sizeof(fuse_in_header) + sizeof(fuse_write_in)`
+	 *
+	 * which is the absolute minimum any sane filesystem should be using
+	 * for header room.
+	 */
+	if (nbytes < max_t(size_t, FUSE_MIN_READ_BUFFER,
+			   sizeof(struct fuse_in_header) +
+			   sizeof(struct fuse_write_in) +
+			   fc->max_write))
+		return -EINVAL;
+
 	if ((current->flags & PF_NOFREEZE) == 0) {
 		current->flags |= PF_NOFREEZE | PF_MEMALLOC_NOFS;
 		printk_ratelimited(KERN_WARNING "%s(%d): This thread should not be frozen\n",
