@@ -1,0 +1,91 @@
+name: Build Atlas Kernel
+
+on:
+  push:
+    branches: [ master ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout kernel source
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            bison \
+            flex \
+            libncurses5-dev \
+            libssl-dev \
+            bc \
+            python3 \
+            libelf-dev \
+            ccache \
+            zip \
+            device-tree-compiler
+
+      - name: Download AOSP Clang
+        run: |
+          mkdir -p clang-r547379
+          curl -L "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/main/clang-r547379.tar.gz" -o clang.tar.gz
+          tar -xzf clang.tar.gz -C clang-r547379
+          chmod -R +x clang-r547379/bin
+          rm -f clang.tar.gz
+
+      - name: Build kernel
+        run: |
+          export PATH="$(pwd)/clang-r547379/bin:${PATH}"
+          export ARCH=arm64
+          export LLVM=1
+          export LLVM_IAS=1
+
+          mkdir out
+
+          make ARCH=arm64 O=out CC=clang exynos850-a21snsxx_defconfig
+          make ARCH=arm64 O=out CC=clang -j$(nproc)
+
+      - name: Build dtb
+        run: |
+          dtc -I dts -O dtb -o raw.dtb arch/arm64/boot/dts/exynos/exynos3830.dts
+          curl -sL "https://android.googlesource.com/platform/prebuilts/misc/+/master/linux-x86/libufdt/mkdtimg?format=TEXT" | base64 -d > mkdtimg
+          chmod +x mkdtimg
+          ./mkdtimg create dtb --page_size=2048 --custom1=0xff000000 raw.dtb
+          echo "dtb size: $(du -h dtb | cut -f1)"
+
+      - name: Verify build
+        run: |
+          if [ ! -f out/arch/arm64/boot/Image ]; then
+            echo "Kernel Image not found!"
+            exit 1
+          fi
+          echo "Kernel Image size: $(du -h out/arch/arm64/boot/Image | cut -f1)"
+
+      - name: Package flashable zip
+        run: |
+          git clone https://github.com/osm0sis/AnyKernel3
+          cd AnyKernel3
+          git checkout db90e19
+          cd ..
+          cp out/arch/arm64/boot/Image AnyKernel3/
+          cp dtb AnyKernel3/dtb
+          cp .github/anykernel.sh AnyKernel3/anykernel.sh
+
+          cd AnyKernel3
+          rm -f kernel/zImage
+          chmod +x anykernel.sh
+
+          zip -r9 "${GITHUB_WORKSPACE}/atlas.zip" * -x .git README.md *placeholder
+
+      - name: Upload flashable zip
+        uses: actions/upload-artifact@v4
+        with:
+          name: kernel.zip
+          path: atlas.zip
