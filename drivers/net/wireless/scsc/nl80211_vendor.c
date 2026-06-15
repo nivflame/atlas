@@ -2737,6 +2737,12 @@ static int slsi_lls_get_stats(struct wiphy *wiphy, struct wireless_dev *wdev, co
 	if (!slsi_dev_lls_supported())
 		return -EOPNOTSUPP;
 
+	/* Prevent HAL crash: struct layout mismatch between kernel slsi_lls_peer_info
+	 * (has bssload field) and HAL wifi_peer_info (no bssload) causes the HAL
+	 * to read bssload as num_rate, triggering SIGSEGV in AIDL wifi-service.
+	 */
+	return -EOPNOTSUPP;
+
 	if (slsi_is_test_mode_enabled()) {
 		SLSI_WARN(sdev, "not supported in WlanLite mode\n");
 		return -EOPNOTSUPP;
