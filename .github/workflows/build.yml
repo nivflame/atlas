@@ -46,9 +46,6 @@ jobs:
           export ARCH=arm64
           export LLVM=1
           export LLVM_IAS=1
-          export KBUILD_BUILD_USER=thomas
-          export KBUILD_BUILD_HOST=TT
-          export KBUILD_BUILD_TIMESTAMP="$(git log -1 --format=%ci)"
 
           mkdir out
 
@@ -73,6 +70,7 @@ jobs:
 
       - name: Package flashable zip
         run: |
+          BUILD_SHA=$(git rev-parse --short HEAD)
           git clone https://github.com/osm0sis/AnyKernel3
           cd AnyKernel3
           git checkout db90e19
@@ -87,8 +85,10 @@ jobs:
 
           zip -r9 "${GITHUB_WORKSPACE}/atlas.zip" * -x .git README.md *placeholder
 
+          echo "BUILD_SHA=${BUILD_SHA}" >> "${GITHUB_ENV}"
+
       - name: Upload flashable zip
         uses: actions/upload-artifact@v4
         with:
-          name: kernel.zip
+          name: kernel-${{ env.BUILD_SHA }}.zip
           path: atlas.zip
